@@ -58,36 +58,51 @@ impl TreeFolder {
 #[derive(Debug)]
 struct Fs(HashMap<String, TreeFolder>);
 
+#[derive(Debug)]
+struct Path(Vec<String>);
+
+impl Path {
+    fn root() -> Self {
+        Self(vec![])
+    }
+
+    fn add(&mut self, folder_name: &str) {
+        self.0.push(folder_name.to_string());
+    }
+
+    fn parent(&mut self) {
+        self.0.pop();
+    }
+
+    fn as_string(&self) -> String {
+        self.0
+            .iter()
+            .fold(String::new(), |acc, path_piece| acc.add(path_piece))
+    }
+}
+
 impl Fs {
     fn from_terminal_outputs(terminal_outputs: Vec<TerminalOutput>) -> Self {
         let mut fs = HashMap::new();
-        let mut actual_folder_name = String::from("/");
+        let mut actual_path = Path::root();
         let mut actual_folder = TreeFolder::new();
         for terminal_output in &terminal_outputs[1..] {
             match terminal_output {
                 TerminalOutput::Command(command) => match command {
                     TerminalCommand::ChDir(ch_dir_command) => {
-                        fs.insert(actual_folder_name.to_owned(), actual_folder.clone());
+                        fs.insert(actual_path.as_string(), actual_folder.clone());
 
                         match ch_dir_command {
                             ChDirCommand::ChDir(name) => {
-                                actual_folder_name = if actual_folder_name == "/" {
-                                    actual_folder_name.add(name)
-                                } else {
-                                    actual_folder_name.add("/").add(name)
-                                }
+                                actual_path.add(name);
                             }
                             ChDirCommand::ChDirBack => {
-                                actual_folder_name =
-                                    actual_folder_name.rsplit_once("/").unwrap().0.to_string();
-                                if actual_folder_name == "" {
-                                    actual_folder_name = String::from("/");
-                                }
+                                actual_path.parent();
                             }
-                            ChDirCommand::ChDirTop => actual_folder_name = String::from("/"),
+                            ChDirCommand::ChDirTop => actual_path = Path::root(),
                         }
                         actual_folder = fs
-                            .get(actual_folder_name.as_str())
+                            .get(&actual_path.as_string())
                             .cloned()
                             .unwrap_or(TreeFolder::new());
                     }
@@ -97,7 +112,7 @@ impl Fs {
                 TerminalOutput::Dir(_) => {}
             }
         }
-        fs.insert(actual_folder_name.to_owned(), actual_folder.clone());
+        fs.insert(actual_path.as_string(), actual_folder.clone());
 
         Self(fs)
     }
