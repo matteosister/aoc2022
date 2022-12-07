@@ -61,9 +61,14 @@ struct Fs(HashMap<String, TreeFolder>);
 #[derive(Debug)]
 struct Path(Vec<String>);
 
+/// A path type to add paths, go to root and go to parent
 impl Path {
-    fn root() -> Self {
+    fn new() -> Self {
         Self(vec![])
+    }
+
+    fn root(&mut self) {
+        self.0 = vec![];
     }
 
     fn add(&mut self, folder_name: &str) {
@@ -75,8 +80,12 @@ impl Path {
     }
 
     fn as_string(&self) -> String {
+        if self.0.len() == 0 {
+            return String::from("/");
+        }
         self.0
             .iter()
+            .flat_map(|v| vec!["/", v])
             .fold(String::new(), |acc, path_piece| acc.add(path_piece))
     }
 }
@@ -84,8 +93,9 @@ impl Path {
 impl Fs {
     fn from_terminal_outputs(terminal_outputs: Vec<TerminalOutput>) -> Self {
         let mut fs = HashMap::new();
-        let mut actual_path = Path::root();
+        let mut actual_path = Path::new();
         let mut actual_folder = TreeFolder::new();
+
         for terminal_output in &terminal_outputs[1..] {
             match terminal_output {
                 TerminalOutput::Command(command) => match command {
@@ -99,8 +109,9 @@ impl Fs {
                             ChDirCommand::ChDirBack => {
                                 actual_path.parent();
                             }
-                            ChDirCommand::ChDirTop => actual_path = Path::root(),
+                            ChDirCommand::ChDirTop => actual_path.root(),
                         }
+
                         actual_folder = fs
                             .get(&actual_path.as_string())
                             .cloned()
@@ -116,6 +127,9 @@ impl Fs {
 
         Self(fs)
     }
+
+    /// traverse the tree by providing a name to match on the key, and a generic function that is
+    /// applied to all contained files yielding a final result.
     fn traverse<V>(&self, start_name: &str, func: impl Fn(Vec<&TreeFile>) -> V) -> V {
         let files = self
             .0
