@@ -1,22 +1,56 @@
 use priority_queue::PriorityQueue;
+use std::cmp::min;
 use std::collections::{HashMap, HashSet};
-use std::ops::Index;
 
-fn find_path(maze: &mut Maze, start: &mut Node, end: &mut Node) {
+fn find_path(maze: &mut Maze, start: &mut Node, end: &mut Node) -> Vec<Node> {
     let mut queue = PriorityQueue::new();
-    start.root_distance = 0;
-    queue.push(start, 0);
+    start.distance = 0;
+    queue.push(start.clone(), 0);
+
     let mut discovered_nodes = HashSet::new();
 
     while !queue.is_empty() {
         let (current_node, _) = queue.pop().unwrap();
         discovered_nodes.insert((current_node.x, current_node.y));
-        for neighbor in
-            maze.get_unvisited_neighbor((current_node.x, current_node.y), discovered_nodes)
-        {
+
+        for neighbor in maze.get_unvisited_neighbor(&current_node, &discovered_nodes) {
+            let neighbor_node = maze.get_mut(&(neighbor.x, neighbor.y)).unwrap();
+
+            let min_distance = min(
+                neighbor_node.distance,
+                current_node
+                    .distance
+                    .checked_add(1)
+                    .unwrap_or(current_node.root_distance),
+            );
+            if min_distance != neighbor_node.distance {
+                neighbor_node.distance = min_distance;
+                neighbor_node.parent = Some((current_node.x, current_node.y));
+                if queue.get_mut(neighbor_node).is_some() {
+                    queue.change_priority(&neighbor_node, min_distance);
+                }
+            }
+
+            let priority = neighbor_node.distance;
+            queue.push(*neighbor_node, priority);
         }
-        break;
     }
+
+    let end_node = maze.get(&(end.x, end.y)).unwrap();
+    let mut path = vec![];
+    let mut previous_node = end_node;
+    loop {
+        let parent_coords = previous_node.parent;
+        match parent_coords {
+            None => break,
+            Some(parent_coords) => {
+                let parent_node = maze.get(&parent_coords).unwrap();
+                path.push(parent_node);
+                previous_node = parent_node;
+            }
+        }
+    }
+    path.into_iter().cloned().rev().collect()
 }
 
 fn generate_nodes(input: &str) -> (Vec<Node>, Node, Node) {
@@ -54,23 +88,20 @@ fn generate_nodes(input: &str) -> (Vec<Node>, Node, Node) {
 #[derive(Debug)]
 struct Maze {
     nodes: Vec<Node>,
-    rows: usize,
-    cols: usize,
 }
 
 impl Maze {
     fn from_input(input: &str) -> (Self, Node, Node) {
-        let rows = input.lines().count();
-        let cols = input.lines().nth(0).unwrap().chars().count();
         let (nodes, start, end) = generate_nodes(input);
-        (Self { nodes, rows, cols }, start, end)
+        (Self { nodes }, start, end)
     }
 
     fn get_unvisited_neighbor(
         &self,
-        (x, y): (usize, usize),
-        visited_nodes: HashSet<(usize, usize)>,
+        node: &Node,
+        visited_nodes: &HashSet<(usize, usize)>,
     ) -> Vec<Node> {
+        let (x, y) = (node.x, node.y);
         let top_coords = (x, y - 1);
         let right_coords = (x + 1, y);
         let bottom_coords = (x, y + 1);
@@ -80,11 +111,13 @@ impl Maze {
             if visited_nodes.contains(&(coord.0, coord.1)) {
                 continue;
             }
-            dbg!(coord);
+
             match self.nodes.iter().find(|n| n.x == coord.0 && n.y == coord.1) {
                 None => {}
-                Some(node) => {
-                    out.push(node.clone());
+                Some(new_node) => {
+                    if new_node.elevation <= node.elevation + 1 {
+                        out.push(new_node.clone());
+                    }
                 }
             }
         }
@@ -93,6 +126,10 @@ impl Maze {
 
     fn get_mut(&mut self, (x, y): &(usize, usize)) -> Option<&mut Node> {
         self.nodes.iter_mut().find(|n| n.x == *x && n.y == *y)
+    }
+
+    fn get(&self, (x, y): &(usize, usize)) -> Option<&Node> {
+        self.nodes.iter().find(|n| n.x == *x && n.y == *y)
     }
 }
 
@@ -103,7 +140,7 @@ struct Node {
     elevation: usize,
     distance: usize,
     root_distance: usize,
-    manhattan_distance: usize,
+    parent: Option<(usize, usize)>,
 }
 
 impl Node {
@@ -114,7 +151,7 @@ impl Node {
             elevation,
             distance: usize::MAX,
             root_distance: usize::MAX,
-            manhattan_distance: usize::MAX,
+            parent: None,
         }
     }
 
@@ -127,19 +164,12 @@ impl Node {
 
         Self::new(x, y, elevation)
     }
-
-    fn set_manhattan_distance(&mut self, end: &Node) {
-        self.manhattan_distance = (end.x.abs_diff(self.x) + end.y.abs_diff(self.y)) * 2
-    }
 }
 
 pub fn part_one(input: &str) -> Option<u32> {
     let (mut maze, mut start, mut end) = Maze::from_input(input);
-    for mut node in maze.nodes.iter_mut() {
-        node.set_manhattan_distance(&end);
-    }
-    find_path(&mut maze, &mut start, &mut end);
-    None
+    let path = find_path(&mut maze, &mut start, &mut end);
+    Some(path.len() as u32)
 }
 
 pub fn part_two(input: &str) -> Option<u32> {
